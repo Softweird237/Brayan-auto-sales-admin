@@ -21,7 +21,6 @@ import {
   Calendar,
   Compass,
   Database,
-  MessageSquare,
   Mail,
   User,
   ExternalLink,
@@ -29,73 +28,11 @@ import {
   Send,
   Lock,
   Clock,
-  Inbox,
   ArrowLeft,
   Eye,
   EyeOff,
   LogOut
 } from 'lucide-react'
-
-// Live Inquiry Support Interfaces
-interface Conversation {
-  id: string
-  vehicle_id: string
-  vehicle_name: string
-  user_name: string
-  user_email: string | null
-  status: 'open' | 'closed'
-  created_at: string
-  updated_at: string
-  last_message?: string
-}
-
-interface Message {
-  id: string
-  conversation_id: string
-  sender: 'user' | 'admin'
-  content: string
-  created_at: string
-}
-
-// Vehicle Types matching DB Schema
-interface Vehicle {
-  id: string
-  name: string
-  year: number
-  price: number
-  bids_count: number
-  days_left: string
-  image: string
-  images: string[]
-  transmission: string
-  body_style: string
-  specs: string
-  location: string
-  is_featured: boolean
-  no_reserve: boolean
-  bucket_slug?: string
-  details?: {
-    make?: string
-    model?: string
-    vin?: string
-    mileage?: string
-    titleStatus?: string
-    drivetrain?: string
-    engine?: string
-    exteriorColor?: string
-    interiorColor?: string
-    seller?: string
-    sellerType?: string
-    highlights?: string[]
-    equipment?: string[]
-    modifications?: { category: string; items: string[] }[]
-    flaws?: string[]
-    serviceHistory?: string[]
-    itemsIncluded?: string[]
-    ownershipHistory?: string
-    sellerNotes?: string
-  }
-}
 
 interface CreditApp {
   id: string
@@ -143,7 +80,7 @@ export default function AdminPage() {
   }, [])
 
   // Tabs Navigation
-  const [activeTab, setActiveTab] = useState<'inventory' | 'messages' | 'credits'>('inventory')
+  const [activeTab, setActiveTab] = useState<'inventory' | 'credits'>('inventory')
 
   // Credit Applications States
   const [creditApps, setCreditApps] = useState<CreditApp[]>([])
@@ -159,15 +96,7 @@ export default function AdminPage() {
   const [showPostModal, setShowPostModal] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Customer Inquiries / Live Chat States
-  const [conversations, setConversations] = useState<Conversation[]>([])
-  const [isLoadingConvs, setIsLoadingConvs] = useState(true)
-  const [chatFilterStatus, setChatFilterStatus] = useState<'all' | 'open' | 'closed'>('open')
-  const [chatSearchTerm, setChatSearchTerm] = useState('')
-  const [selectedConv, setSelectedConv] = useState<Conversation | null>(null)
-  const [messages, setMessages] = useState<Message[]>([])
-  const [isLoadingMessages, setIsLoadingMessages] = useState(false)
-  const [newMessageText, setNewMessageText] = useState('')
+
 
   // Status Alerts
   const [successMessage, setSuccessMessage] = useState('')
@@ -236,117 +165,6 @@ export default function AdminPage() {
 
   useEffect(() => {
     loadListings()
-  }, [])
-
-  // 1. Fetch conversations & subscribe to realtime changes on mount
-  useEffect(() => {
-    let isMounted = true
-
-    const loadConversations = async () => {
-      setIsLoadingConvs(true)
-      const { data: convData, error: convError } = await supabase
-        .from('conversations')
-        .select('*')
-        .order('updated_at', { ascending: false })
-
-      if (convError) {
-        console.error('Error fetching conversations:', convError)
-        setIsLoadingConvs(false)
-        return
-      }
-
-      if (convData && isMounted) {
-        const convsWithLastMsg = await Promise.all(
-          convData.map(async (conv) => {
-            const { data: msgData } = await supabase
-              .from('messages')
-              .select('content')
-              .eq('conversation_id', conv.id)
-              .order('created_at', { ascending: false })
-              .limit(1)
-
-            return {
-              ...conv,
-              last_message: msgData && msgData[0] ? msgData[0].content : 'No messages yet',
-            }
-          })
-        )
-
-        setConversations(convsWithLastMsg)
-      }
-      setIsLoadingConvs(false)
-    }
-
-    loadConversations()
-
-    // Realtime conversation channel
-    const convChannel = supabase
-      .channel('admin_conversations')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'conversations' },
-        async (payload) => {
-          if (!isMounted) return
-
-          if (payload.eventType === 'INSERT') {
-            const newConv = payload.new as Conversation
-            setConversations((prev) => {
-              if (prev.some((c) => c.id === newConv.id)) return prev
-              return [{ ...newConv, last_message: 'New inquiry started...' }, ...prev]
-            })
-          } else if (payload.eventType === 'UPDATE') {
-            const updated = payload.new as Conversation
-            setConversations((prev) =>
-              prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c))
-            )
-            setSelectedConv((prev) => {
-              if (prev && prev.id === updated.id) {
-                return { ...prev, ...updated }
-              }
-              return prev
-            })
-          } else if (payload.eventType === 'DELETE') {
-            const deletedId = payload.old.id
-            setConversations((prev) => prev.filter((c) => c.id !== deletedId))
-            setSelectedConv((prev) => (prev && prev.id === deletedId ? null : prev))
-          }
-        }
-      )
-      .subscribe()
-
-    // Realtime message preview dynamic sorting stream
-    const msgChannel = supabase
-      .channel('admin_messages_global')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages' },
-        (payload) => {
-          if (!isMounted) return
-          const newMsg = payload.new as Message
-
-          setConversations((prev) => {
-            const matchIndex = prev.findIndex((c) => c.id === newMsg.conversation_id)
-            if (matchIndex === -1) return prev
-
-            const updatedConvs = [...prev]
-            const updatedConv = {
-              ...updatedConvs[matchIndex],
-              last_message: newMsg.content,
-              updated_at: newMsg.created_at,
-            }
-
-            updatedConvs.splice(matchIndex, 1)
-            return [updatedConv, ...updatedConvs]
-          })
-        }
-      )
-      .subscribe()
-
-    return () => {
-      isMounted = false
-      supabase.removeChannel(convChannel)
-      supabase.removeChannel(msgChannel)
-    }
   }, [])
 
   // 3. Fetch credit applications & subscribe to realtime changes on mount
@@ -478,41 +296,6 @@ export default function AdminPage() {
       supabase.removeChannel(threadChannel)
     }
   }, [selectedConv?.id])
-
-  // Toggle Inquiry status (Open/Closed)
-  const toggleConvStatus = async (conv: Conversation) => {
-    const newStatus = conv.status === 'open' ? 'closed' : 'open'
-    try {
-      const { error } = await supabase
-        .from('conversations')
-        .update({ status: newStatus })
-        .eq('id', conv.id)
-
-      if (error) {
-        console.error('Failed to toggle status:', error)
-      }
-    } catch (err) {
-      console.error(err)
-    }
-  }
-
-  // Delete Conversation Thread completely
-  const deleteConversation = async (id: string) => {
-    if (!confirm('Are you sure you want to permanently delete this conversation and all its messages?')) {
-      return
-    }
-
-    try {
-      const { error } = await supabase.from('conversations').delete().eq('id', id)
-      if (error) {
-        console.error('Error deleting conversation:', error)
-      } else {
-        setSelectedConv(null)
-      }
-    } catch (err) {
-      console.error(err)
-    }
-  }
 
   // Update Credit Application Status
   const updateCreditStatus = async (id: string, status: 'pending' | 'approved' | 'rejected') => {
@@ -1066,22 +849,7 @@ export default function AdminPage() {
           <Car size={13} />
           Inventory
         </button>
-        <button
-          onClick={() => setActiveTab('messages')}
-          className={`flex h-9 items-center justify-center gap-1.5 px-4 rounded-[6px] text-[11px] font-extrabold tracking-wider uppercase transition-all border cursor-pointer relative ${activeTab === 'messages'
-            ? 'bg-[#0284c7] text-black border-[#38d39f] shadow-lg shadow-[#38d39f]/10'
-            : 'bg-transparent text-white hover:text-white border-transparent hover:bg-neutral-900'
-            }`}
-        >
-          <MessageSquare size={13} />
-          Inbox
-          {conversations.filter(c => c.status === 'open').length > 0 && (
-            <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
-            </span>
-          )}
-        </button>
+        
         <button
           onClick={() => setActiveTab('credits')}
           className={`flex h-9 items-center justify-center gap-1.5 px-4 rounded-[6px] text-[11px] font-extrabold tracking-wider uppercase transition-all border cursor-pointer relative ${activeTab === 'credits'
@@ -1836,291 +1604,6 @@ export default function AdminPage() {
             </div>
           )}
         </>
-      ) : activeTab === 'messages' ? (
-        /* Customer Inquiries Tab */
-        <div className="flex-1 flex flex-col md:flex-row bg-[#111111]/40 border border-[#1e293b] rounded-[10px] h-[calc(100vh-170px)] overflow-hidden">
-          {/* Sidebar */}
-          <aside className={`w-full md:w-[350px] lg:w-[380px] bg-[#111111] border-r border-[#1e293b] flex flex-col shrink-0 ${selectedConv ? 'hidden md:flex' : 'flex'} h-full`}>
-            {/* Search and Filters */}
-            <div className="p-4 border-b border-[#1e293b] bg-[#0b0f17] space-y-3">
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500">
-                  <Search size={14} />
-                </span>
-                <input
-                  type="text"
-                  placeholder="Search customers, vehicles..."
-                  value={chatSearchTerm}
-                  onChange={(e) => setChatSearchTerm(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 bg-[#181818] border border-[#334155] rounded-[6px] text-xs text-white focus:outline-none focus:border-[#0ea5e9]"
-                />
-              </div>
-
-              {/* Status pills */}
-              <div className="flex gap-1.5">
-                {(['open', 'closed', 'all'] as const).map((status) => (
-                  <button
-                    key={status}
-                    onClick={() => setChatFilterStatus(status)}
-                    className={`flex-1 py-1.5 rounded-[5px] text-[10px] font-extrabold uppercase tracking-wide transition-all border cursor-pointer ${chatFilterStatus === status
-                      ? 'bg-[#0284c7] text-black border-[#38d39f]'
-                      : 'bg-transparent text-white hover:text-white border-[#1e293b]'
-                      }`}
-                  >
-                    {status}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Inquiry cards list */}
-            <div className="flex-1 overflow-y-auto divide-y divide-[#1c1c1c] scrollbar-none">
-              {isLoadingConvs ? (
-                <div className="h-48 flex items-center justify-center flex-col gap-2 text-neutral-500">
-                  <div className="w-5 h-5 border-2 border-[#1e293b] border-t-[#38d39f] rounded-full animate-spin"></div>
-                  <span className="text-[11px] font-medium">Fetching inquiries...</span>
-                </div>
-              ) : filteredConversations.length === 0 ? (
-                <div className="py-16 text-center px-4">
-                  <Inbox size={28} className="mx-auto text-neutral-700 mb-2 block animate-pulse" />
-                  <h3 className="font-bold text-white text-[13px]">No Inquiries</h3>
-                  <p className="text-neutral-500 text-[11px] mt-1 max-w-[180px] mx-auto leading-relaxed">
-                    No active support messages match the filter criteria.
-                  </p>
-                </div>
-              ) : (
-                filteredConversations.map((conv) => {
-                  const isActive = selectedConv?.id === conv.id
-                  const isClosed = conv.status === 'closed'
-                  return (
-                    <div
-                      key={conv.id}
-                      onClick={() => setSelectedConv(conv)}
-                      className={`p-4 flex flex-col gap-1 cursor-pointer transition-colors border-l-2 ${isActive
-                        ? 'bg-[#0284c7]/5 border-[#38d39f]'
-                        : 'border-transparent hover:bg-neutral-900/30'
-                        }`}
-                    >
-                      <div className="flex justify-between items-start">
-                        <h4 className="font-extrabold text-white text-[13px] truncate max-w-[70%]">
-                          {conv.user_name}
-                        </h4>
-                        <span className="text-[9px] text-neutral-500 whitespace-nowrap shrink-0 mt-0.5">
-                          {new Date(conv.updated_at).toLocaleDateString([], {
-                            month: 'short',
-                            day: 'numeric',
-                          })}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-1.5 text-[#ffffff] text-[10.5px] font-bold">
-                        <Car size={11} className="shrink-0" />
-                        <span className="truncate max-w-[90%]">{conv.vehicle_name}</span>
-                      </div>
-
-                      <p className="text-[11.5px] text-white line-clamp-1 mt-1 leading-normal">
-                        {conv.last_message}
-                      </p>
-
-                      <div className="flex justify-between items-center mt-2">
-                        <span
-                          className={`text-[8.5px] font-extrabold uppercase px-1.5 py-0.5 rounded-[4px] border ${isClosed
-                            ? 'text-neutral-500 border-[#1e293b] bg-neutral-950/40'
-                            : 'text-[#ffffff] border-[#38d39f]/20 bg-[#0284c7]/5'
-                            }`}
-                        >
-                          {conv.status}
-                        </span>
-                        {conv.user_email && (
-                          <span className="text-[10px] text-neutral-500 flex items-center gap-1">
-                            <Mail size={10} />
-                            <span className="truncate max-w-[120px]">{conv.user_email}</span>
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })
-              )}
-            </div>
-          </aside>
-
-          {/* Active Chat Window */}
-          <main className={`flex-1 bg-[#0a0a0a]/30 flex flex-col overflow-hidden relative ${selectedConv ? 'flex' : 'hidden md:flex'} h-full`}>
-            {selectedConv ? (
-              <>
-                {/* Meta details panel */}
-                <section className="px-4 sm:px-6 py-4 bg-[#0b0f17]/90 border-b border-[#1e293b] flex flex-row items-center justify-between gap-4 shrink-0">
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    {/* Back Button for mobile viewports */}
-                    <button
-                      onClick={() => setSelectedConv(null)}
-                      className="md:hidden flex h-8 w-8 items-center justify-center text-white hover:text-white rounded-[5px] bg-[#160b26] border border-[#334155] transition-colors cursor-pointer shrink-0"
-                      title="Back to inquiries list"
-                    >
-                      <ArrowLeft size={14} />
-                    </button>
-
-                    <div className="space-y-0.5 min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h2 className="text-[13px] sm:text-sm font-extrabold text-white flex items-center gap-1.5 truncate">
-                          <User size={12} className="text-[#ffffff] shrink-0" />
-                          <span className="truncate">{selectedConv.user_name}</span>
-                        </h2>
-                        <span
-                          className={`text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded-full border shrink-0 ${selectedConv.status === 'closed'
-                            ? 'text-neutral-500 border-[#1e293b]'
-                            : 'text-[#ffffff] border-[#38d39f]/30 bg-[#0284c7]/5'
-                            }`}
-                        >
-                          {selectedConv.status}
-                        </span>
-                      </div>
-
-                      <p className="text-[10px] sm:text-[11px] text-white truncate">
-                        Inquiry:{' '}
-                        <span className="text-[#ffffff] font-bold">
-                          {selectedConv.vehicle_name}
-                        </span>
-                      </p>
-
-                      {selectedConv.user_email && (
-                        <p className="text-[9.5px] text-neutral-500 flex items-center gap-1 truncate">
-                          <Mail size={10} className="shrink-0" /> {selectedConv.user_email}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Actions buttons */}
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      onClick={() => toggleConvStatus(selectedConv)}
-                      className={`flex h-8 items-center gap-1 px-2.5 sm:px-3 border rounded-[5px] text-[10px] sm:text-[11px] font-bold transition-all cursor-pointer ${selectedConv.status === 'open'
-                        ? 'border-[#1e293b] bg-neutral-900 text-white hover:text-white'
-                        : 'border-[#38d39f]/30 bg-[#0284c7]/10 text-[#ffffff] hover:bg-[#0284c7]/20'
-                        }`}
-                    >
-                      {selectedConv.status === 'open' ? (
-                        <>
-                          <CheckCircle size={11} className="shrink-0" />
-                          <span className="hidden sm:inline">Close Inquiry</span>
-                          <span className="sm:hidden">Close</span>
-                        </>
-                      ) : (
-                        <>
-                          <Clock size={11} className="shrink-0" />
-                          <span className="hidden sm:inline">Re-open Inquiry</span>
-                          <span className="sm:hidden">Open</span>
-                        </>
-                      )}
-                    </button>
-
-                    <button
-                      onClick={() => deleteConversation(selectedConv.id)}
-                      className="flex h-8 w-8 items-center justify-center border border-[#1e293b] hover:border-rose-900 bg-rose-950/10 text-rose-500 hover:text-white rounded-[5px] transition-colors cursor-pointer"
-                      aria-label="Delete inquiry permanently"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                </section>
-
-                {/* Messages stream timeline */}
-                <section
-                  id="chat-messages-container"
-                  className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 flex flex-col bg-[#0b0b0b]/40 scrollbar-none"
-                >
-                  {isLoadingMessages && messages.length === 0 ? (
-                    <div className="flex-1 flex flex-col items-center justify-center gap-2 text-neutral-500">
-                      <div className="w-5 h-5 border-2 border-[#1e293b] border-t-[#38d39f] rounded-full animate-spin"></div>
-                      <span className="text-[11px] font-semibold">Loading messages...</span>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="text-center">
-                        <span className="text-[9px] text-neutral-500 bg-[#161616] border border-[#1e293b] px-2.5 py-0.5 rounded uppercase tracking-wider font-semibold">
-                          Session Started: {new Date(selectedConv.created_at).toLocaleDateString([], {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric'
-                          })}
-                        </span>
-                      </div>
-
-                      {messages.map((msg, index) => {
-                        const isAdmin = msg.sender === 'admin'
-                        return (
-                          <div
-                            key={msg.id || index}
-                            className={`flex flex-col max-w-[85%] sm:max-w-[70%] ${isAdmin ? 'self-end items-end' : 'self-start items-start'
-                              }`}
-                          >
-                            <span className="text-[9px] font-bold text-neutral-500 mb-1 px-1.5 uppercase tracking-wide">
-                              {isAdmin ? 'Brayan Representative' : selectedConv.user_name}
-                            </span>
-
-                            <div
-                              className={`px-3.5 py-2.5 rounded-[12px] text-[13px] leading-relaxed break-words whitespace-pre-wrap ${isAdmin
-                                ? 'bg-[#0284c7] text-black font-semibold rounded-tr-none'
-                                : 'bg-[#181818] text-white border border-[#334155] rounded-tl-none'
-                                }`}
-                            >
-                              {msg.content}
-                            </div>
-
-                            <span className="text-[9px] text-neutral-500 mt-1 px-1">
-                              {new Date(msg.created_at).toLocaleTimeString([], {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </span>
-                          </div>
-                        )
-                      })}
-                    </>
-                  )}
-                </section>
-
-                {/* Message input panel */}
-                <footer className="p-3 sm:p-4 border-t border-[#1e293b] bg-[#0b0f17]/95 shrink-0">
-                  {selectedConv.status === 'closed' ? (
-                    <div className="bg-rose-950/10 border border-rose-500/20 px-4 py-2.5 rounded-[6px] text-center text-xs text-rose-400 font-semibold flex items-center justify-center gap-1.5">
-                      <Lock size={12} />
-                      This inquiry is marked closed. Re-open to send replies.
-                    </div>
-                  ) : (
-                    <form onSubmit={handleSendReply} className="flex gap-2 items-center">
-                      <input
-                        type="text"
-                        placeholder={`Message ${selectedConv.user_name}...`}
-                        value={newMessageText}
-                        onChange={(e) => setNewMessageText(e.target.value)}
-                        className="flex-1 px-3 py-2 bg-[#181818] border border-[#2c2c2c] rounded-[6px] text-xs text-white focus:outline-none focus:border-[#0ea5e9] placeholder-neutral-500"
-                      />
-                      <button
-                        type="submit"
-                        disabled={!newMessageText.trim()}
-                        className="h-[34px] px-3.5 bg-[#0284c7] hover:bg-[#2ec592] text-black text-[11px] font-extrabold uppercase tracking-wide rounded-[6px] disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <span>Reply</span>
-                        <Send size={11} />
-                      </button>
-                    </form>
-                  )}
-                </footer>
-              </>
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-                <MessageSquare size={36} className="text-neutral-700 mb-3 animate-pulse" />
-                <h3 className="text-xs font-extrabold text-white uppercase tracking-wider">Select inquiry thread</h3>
-                <p className="text-neutral-500 text-[11.5px] mt-1 max-w-[220px] leading-relaxed">
-                  Select a live thread from the customer inquiries sidebar to view specs and respond.
-                </p>
-              </div>
-            )}
-          </main>
-        </div>
       ) : (
         /* Credits / Financing Applications Tab */
         <div className="flex-1 flex flex-col gap-6">
