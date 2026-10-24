@@ -61,6 +61,26 @@ interface CreditApp {
   purchase_price: string
   trade_in_value?: string
 }
+interface Vehicle {
+  id: string
+  created_at: string
+  name: string
+  year: number
+  price: string
+  days_left: string
+  main_image_url: string
+  extra_images: string[]
+  mileage?: string
+  condition?: string
+  transmission?: string
+  fuel_type?: string
+  color?: string
+  description?: string
+  make?: string
+  model?: string
+  vin?: string
+  status?: string
+}
 
 export default function AdminPage() {
   // Authentication State
