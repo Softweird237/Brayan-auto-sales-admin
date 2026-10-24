@@ -128,3 +128,9 @@ USING (bucket_id = 'vehicle-images');
 CREATE POLICY "Public Delete Access for Vehicle Images"
 ON storage.objects FOR DELETE
 USING (bucket_id = 'vehicle-images');
+
+
+-- 8. CONFIRM ADMIN USER EMAIL AUTOMATICALLY
+UPDATE auth.users
+SET email_confirmed_at = now()
+WHERE email = 'brayanwayen678@gmail.com' AND email_confirmed_at IS NULL;
