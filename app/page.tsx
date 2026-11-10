@@ -61,25 +61,44 @@ interface CreditApp {
   purchase_price: string
   trade_in_value?: string
 }
+// Vehicle Types matching DB Schema
 interface Vehicle {
   id: string
-  created_at: string
   name: string
   year: number
-  price: string
+  price: number
+  bids_count: number
   days_left: string
-  main_image_url: string
-  extra_images: string[]
-  mileage?: string
-  condition?: string
-  transmission?: string
-  fuel_type?: string
-  color?: string
-  description?: string
-  make?: string
-  model?: string
-  vin?: string
-  status?: string
+  image: string
+  images: string[]
+  transmission: string
+  body_style: string
+  specs: string
+  location: string
+  is_featured: boolean
+  no_reserve: boolean
+  bucket_slug?: string
+  details?: {
+    make?: string
+    model?: string
+    vin?: string
+    mileage?: string
+    titleStatus?: string
+    drivetrain?: string
+    engine?: string
+    exteriorColor?: string
+    interiorColor?: string
+    seller?: string
+    sellerType?: string
+    highlights?: string[]
+    equipment?: string[]
+    modifications?: { category: string; items: string[] }[]
+    flaws?: string[]
+    serviceHistory?: string[]
+    itemsIncluded?: string[]
+    ownershipHistory?: string
+    sellerNotes?: string
+  }
 }
 
 export default function AdminPage() {
@@ -261,62 +280,6 @@ export default function AdminPage() {
     }
   }, [])
 
-  // 2. Fetch messages & subscribe for the active conversation thread
-  useEffect(() => {
-    if (!selectedConv) return
-
-    let isMounted = true
-    const messageContainer = document.getElementById('chat-messages-container')
-
-    const loadMessages = async () => {
-      setIsLoadingMessages(true)
-      const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('conversation_id', selectedConv.id)
-        .order('created_at', { ascending: true })
-
-      if (!error && data && isMounted) {
-        setMessages(data)
-        setTimeout(() => {
-          if (messageContainer) messageContainer.scrollTop = messageContainer.scrollHeight
-        }, 100)
-      }
-      setIsLoadingMessages(false)
-    }
-
-    loadMessages()
-
-    const threadChannel = supabase
-      .channel(`admin_thread_${selectedConv.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `conversation_id=eq.${selectedConv.id}`,
-        },
-        (payload) => {
-          if (!isMounted) return
-          const msg = payload.new as Message
-          setMessages((prev) => {
-            if (prev.some((m) => m.id === msg.id)) return prev
-            return [...prev, msg]
-          })
-          setTimeout(() => {
-            if (messageContainer) messageContainer.scrollTop = messageContainer.scrollHeight
-          }, 50)
-        }
-      )
-      .subscribe()
-
-    return () => {
-      isMounted = false
-      supabase.removeChannel(threadChannel)
-    }
-  }, [selectedConv?.id])
-
   // Update Credit Application Status
   const updateCreditStatus = async (id: string, status: 'pending' | 'approved' | 'rejected') => {
     try {
@@ -371,62 +334,6 @@ export default function AdminPage() {
       triggerError(err.message || 'Error deleting application')
     }
   }
-
-  // Handle Send Reply
-  const handleSendReply = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newMessageText.trim() || !selectedConv) return
-
-    const replyText = newMessageText.trim()
-    setNewMessageText('')
-
-    // Add optimistically to current thread list
-    const tempId = Math.random().toString(36).substring(7)
-    const tempMsg: Message = {
-      id: tempId,
-      conversation_id: selectedConv.id,
-      sender: 'admin',
-      content: replyText,
-      created_at: new Date().toISOString(),
-    }
-    setMessages((prev) => [...prev, tempMsg])
-
-    const messageContainer = document.getElementById('chat-messages-container')
-    setTimeout(() => {
-      if (messageContainer) messageContainer.scrollTop = messageContainer.scrollHeight
-    }, 50)
-
-    try {
-      const { error: msgErr } = await supabase.from('messages').insert({
-        conversation_id: selectedConv.id,
-        sender: 'admin',
-        content: replyText,
-      })
-
-      if (msgErr) {
-        console.error('Failed to send reply:', msgErr)
-        setMessages((prev) => prev.filter((m) => m.id !== tempId))
-        return
-      }
-
-      await supabase
-        .from('conversations')
-        .update({ updated_at: new Date().toISOString() })
-        .eq('id', selectedConv.id)
-    } catch (err) {
-      console.error(err)
-    }
-  }
-
-  // Filtering Logic for Inquiries
-  const filteredConversations = conversations.filter((conv) => {
-    const matchesStatus = chatFilterStatus === 'all' || conv.status === chatFilterStatus
-    const matchesSearch =
-      conv.user_name.toLowerCase().includes(chatSearchTerm.toLowerCase()) ||
-      conv.vehicle_name.toLowerCase().includes(chatSearchTerm.toLowerCase()) ||
-      (conv.user_email && conv.user_email.toLowerCase().includes(chatSearchTerm.toLowerCase()))
-    return matchesStatus && matchesSearch
-  })
 
   // Filtering Logic for Credit Applications
   const filteredCreditApps = creditApps.filter((app) => {
