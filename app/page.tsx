@@ -19,7 +19,6 @@ import {
   X,
   Gauge,
   Calendar,
-  Compass,
   Database,
   Mail,
   User,
@@ -74,7 +73,7 @@ interface Vehicle {
   transmission: string
   body_style: string
   specs: string
-  location: string
+  location?: string
   is_featured: boolean
   no_reserve: boolean
   bucket_slug?: string
@@ -150,7 +149,6 @@ export default function AdminPage() {
   const [transmission, setTransmission] = useState('Manual')
   const [bodyStyle, setBodyStyle] = useState('Sedan')
   const [specs, setSpecs] = useState('')
-  const [location, setLocation] = useState('')
   const [isFeatured, setIsFeatured] = useState(false)
   const [noReserve, setNoReserve] = useState(false)
   const [bucketSlug, setBucketSlug] = useState('')
@@ -510,7 +508,6 @@ export default function AdminPage() {
         transmission,
         body_style: bodyStyle,
         specs: specs.trim(),
-        location: location.trim(),
         is_featured: isFeatured,
         no_reserve: noReserve,
         bucket_slug: selectedFiles ? 'vehicle-images' : null, // Set to default storage bucket
@@ -548,7 +545,6 @@ export default function AdminPage() {
     setTransmission('Manual')
     setBodyStyle('Sedan')
     setSpecs('')
-    setLocation('')
     setIsFeatured(false)
     setNoReserve(false)
     setBucketSlug('')
@@ -596,7 +592,6 @@ export default function AdminPage() {
         transmission: 'Manual',
         body_style: 'Sedan',
         specs: '6.2L LS3 V8 engine, rare 6-speed manual transmission, finished in Slipstream Blue Metallic.',
-        location: 'Phoenix, AZ',
         is_featured: true,
         no_reserve: false,
         details: {
@@ -644,7 +639,6 @@ export default function AdminPage() {
   // Filter listings based on search
   const filteredVehicles = vehicles.filter(v =>
     v.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    v.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
     (v.details?.vin && v.details.vin.toLowerCase().includes(searchQuery.toLowerCase()))
   )
 
@@ -876,7 +870,7 @@ export default function AdminPage() {
             <div className="relative flex-1 max-w-md">
               <input
                 type="text"
-                placeholder="Search by vehicle name, location, or VIN..."
+                placeholder="Search by vehicle name or VIN..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full bg-[#181818] border border-[#334155] rounded-[6px] pl-10 pr-4 py-2.5 text-[13.5px] text-white focus:outline-none focus:border-[#0ea5e9] font-medium"
@@ -952,9 +946,6 @@ export default function AdminPage() {
                         </p>
                         <p className="text-[12.5px] text-white line-clamp-2 leading-relaxed">
                           {vehicle.specs}
-                        </p>
-                        <p className="text-[11px] text-neutral-500 font-medium flex items-center gap-1">
-                          <Compass size={11} /> {vehicle.location}
                         </p>
                       </div>
 
@@ -1048,18 +1039,7 @@ export default function AdminPage() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                      <div className="space-y-1">
-                        <label className="text-[11.5px] font-bold text-white">Location</label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="Phoenix, AZ"
-                          value={location}
-                          onChange={e => setLocation(e.target.value)}
-                          className="w-full bg-[#181818] border border-[#1e293b] rounded-[5px] px-3 py-2 text-xs text-white focus:outline-none focus:border-[#0ea5e9]"
-                        />
-                      </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="space-y-1">
                         <label className="text-[11.5px] font-bold text-white">Transmission</label>
                         <select
